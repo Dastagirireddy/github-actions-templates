@@ -29,7 +29,7 @@ on:
       personal_access_token:
         required: true
         description: Personal Access Token for accessing private repositories
-      GITHUB_TOKEN:
+      github_token:
         required: true
         description: GitHub token for repository access
 
@@ -43,6 +43,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Needed for version detection from git tags
+          token: ${{ secrets.github_token }}
 
       - name: Set up Go
         uses: actions/setup-go@v4
