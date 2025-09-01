@@ -31,89 +31,53 @@ jobs:
   build:
     name: Build and Publish
     runs-on: ubuntu-latest
-    env:
-      APP_NAME: ${{ inputs.app_name }}
-      VERSION: ${{ github.ref_name }}
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
         with:
           go-version: ${{ inputs.go_version }}
-
-      - name: Install dependencies
-        run: |
+      - run: |
           sudo apt-get update
           sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
-
-      - name: Set up build scripts
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
           repository: Dastagirireddy/github-actions-templates
           path: .github/scripts
           token: ${{ secrets.repo_token }}
-          ref: main  # or a specific version tag
-
-      - name: Make scripts executable
-        run: |
+      - run: |
           chmod +x .github/scripts/*.sh
           mkdir -p scripts
           cp .github/scripts/*.sh scripts/
-
-      - name: Set up GPG
-        run: |
+      - run: |
           ./scripts/setup-gpg.sh \
             "GitHub Actions" \
             "deploy@yourdomain.com" \
             "${{ secrets.gpg_passphrase }}"
         env:
           GNUPGHOME: /tmp/gnupg
-
-      - name: Build package
-        run: |
-          ./scripts/build-deb.sh "${APP_NAME}"
+      - run: |
+          ./scripts/build-deb.sh "${{ inputs.app_name }}"
         env:
           VERSION: ${{ github.ref_name }}
-
-      - name: Upload package
-        uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v3
         with:
           name: deb-package
           path: build/deb/*.deb
-          retention-days: 1
-
-      - name: Update APT repository
-        if: startsWith(github.ref, 'refs/tags/')
+      - if: startsWith(github.ref, 'refs/tags/')
         run: |
-          # Clone APT repo
           git clone https://${{ secrets.repo_token }}@github.com/${{ inputs.apt_repo }}.git apt-repo
           cd apt-repo
-          
-          # Import GPG key
           gpg --import /tmp/gnupg/private.asc
           gpg --import /tmp/gnupg/public.asc
-          
-          # Add package
           mkdir -p pool/${{ inputs.distribution }}/${{ inputs.component }}
           cp ../build/deb/*.deb pool/${{ inputs.distribution }}/${{ inputs.component }}/
-          
-          # Update repository metadata
           apt-ftparchive packages . > Packages
           gzip -k -f Packages
-          
-          # Create Release file
           apt-ftparchive release . > Release
           gpg --clearsign -o InRelease Release
           gpg -abs -o Release.gpg Release
-          
-          # Commit and push
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           git add .
-          git commit -m "Add ${APP_NAME} ${VERSION}"
+          git commit -m "Add ${{ inputs.app_name }} ${{ github.ref_name }}"
           git push origin main
