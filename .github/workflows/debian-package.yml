@@ -35,6 +35,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         
+      - name: Checkout templates repository
+        uses: actions/checkout@v4
+        with:
+          repository: Dastagirireddy/github-actions-templates
+          path: templates
+          token: ${{ secrets.repo_token }}
+          
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
@@ -47,6 +54,8 @@ jobs:
           
       - name: Make scripts executable
         run: |
+          mkdir -p scripts
+          cp templates/scripts/*.sh scripts/
           chmod +x scripts/*.sh
       - run: |
           ./scripts/setup-gpg.sh \
