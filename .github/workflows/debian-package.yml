@@ -28,7 +28,7 @@ on:
       repo_token:
         required: true
         description: Token for repository access (GitHub token)
-      repo_access_token:
+      personal_access_token:
         required: true
         description: Personal Access Token for accessing private repositories
 
@@ -79,7 +79,7 @@ jobs:
           path: build/deb/*.deb
       - if: startsWith(github.ref, 'refs/tags/')
         env:
-          REPO_URL: https://${{ secrets.repo_access_token }}@github.com/${{ inputs.apt_repo }}.git
+          REPO_URL: https://${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git
         run: |
           # Configure git user
           git config --global user.name "GitHub Actions"
