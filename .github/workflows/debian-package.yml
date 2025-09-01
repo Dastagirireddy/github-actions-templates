@@ -24,8 +24,13 @@ on:
     secrets:
       gpg_passphrase:
         required: true
+        description: GPG passphrase for signing packages
       repo_token:
         required: true
+        description: Token for repository access (GitHub token)
+      repo_access_token:
+        required: true
+        description: Personal Access Token for accessing private repositories
 
 jobs:
   build:
@@ -73,18 +78,17 @@ jobs:
           name: deb-package
           path: build/deb/*.deb
       - if: startsWith(github.ref, 'refs/tags/')
+        env:
+          REPO_URL: https://${{ secrets.repo_access_token }}@github.com/${{ inputs.apt_repo }}.git
         run: |
-          # Configure git to use the token for authentication
-          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          # Configure git user
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
           
-          # Clone the repository
-          git clone https://github.com/${{ inputs.apt_repo }}.git apt-repo
+          # Clone the repository using PAT
+          git clone $REPO_URL apt-repo
           
           cd apt-repo
-          
-          # Configure git user
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
           
           # Import GPG keys
           gpg --import /tmp/gnupg/private.asc
@@ -106,4 +110,4 @@ jobs:
           # Commit and push changes
           git add .
           git commit -m "Add ${{ inputs.app_name }} ${{ github.ref_name }}" || echo "No changes to commit"
-          git push origin main
+          git push $REPO_URL main
