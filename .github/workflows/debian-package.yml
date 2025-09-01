@@ -25,6 +25,12 @@ on:
       gpg_passphrase:
         required: true
         description: GPG passphrase for signing packages
+      gpg_private_key:
+        required: true
+        description: GPG private key for signing packages (ASCII-armored)
+      gpg_public_key:
+        required: true
+        description: GPG public key (ASCII-armored)
       repo_token:
         required: true
         description: Token for repository access (GitHub token)
@@ -77,7 +83,17 @@ jobs:
         with:
           name: deb-package
           path: build/deb/*.deb
-      - if: startsWith(github.ref, 'refs/tags/')
+      - name: Import GPG keys
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p /tmp/gnupg
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" > /tmp/gnupg/private.asc
+          echo "${{ secrets.GPG_PUBLIC_KEY }}" > /tmp/gnupg/public.asc
+          gpg --import /tmp/gnupg/private.asc
+          gpg --import /tmp/gnupg/public.asc
+          
+      - name: Update APT repository
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           REPO_URL: https://${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git
         run: |
@@ -89,10 +105,6 @@ jobs:
           git clone $REPO_URL apt-repo
           
           cd apt-repo
-          
-          # Import GPG keys
-          gpg --import /tmp/gnupg/private.asc
-          gpg --import /tmp/gnupg/public.asc
           
           # Create directory structure and copy package
           mkdir -p pool/${{ inputs.distribution }}/${{ inputs.component }}
