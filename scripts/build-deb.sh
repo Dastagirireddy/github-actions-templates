@@ -4,6 +4,8 @@ set -e
 # Default values
 APP_NAME="${1:-myapp}"
 VERSION=${VERSION:-$(git describe --tags --always --dirty)}
+# Remove 'v' prefix from version if it exists
+VERSION=${VERSION#v}
 ARCH="amd64"
 BUILD_DIR="build"
 DEB_DIR="${BUILD_DIR}/deb"
