@@ -50,8 +50,8 @@ jobs:
           cp .github/scripts/*.sh scripts/
       - run: |
           ./scripts/setup-gpg.sh \
-            "GitHub Actions" \
-            "deploy@yourdomain.com" \
+            "Dastagirireddy" \
+            "dastagirireddy99.r@gmail.com" \
             "${{ secrets.gpg_passphrase }}"
         env:
           GNUPGHOME: /tmp/gnupg
