@@ -32,22 +32,24 @@ jobs:
     name: Build and Publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Go
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ inputs.go_version }}
-      - run: |
+          
+      - name: Install build dependencies
+        run: |
           sudo apt-get update
           sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
-      - uses: actions/checkout@v3
-        with:
-          repository: Dastagirireddy/github-actions-templates
-          path: .github/scripts
-          token: ${{ secrets.repo_token }}
-      - run: |
-          chmod +x .github/scripts/*.sh
+          
+      - name: Copy build scripts
+        run: |
           mkdir -p scripts
-          cp .github/scripts/*.sh scripts/
+          cp -r .github/scripts/*.sh scripts/
+          chmod +x scripts/*.sh
       - run: |
           ./scripts/setup-gpg.sh \
             "Dastagirireddy" \
