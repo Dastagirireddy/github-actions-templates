@@ -9,10 +9,11 @@ on:
       go_version:
         required: false
         type: string
-        default: '1.21'
+        default: '1.25'
       apt_repo:
         required: true
         type: string
+        default: 'Dastagirireddy/nuboxi-apt-repo'
       distribution:
         required: false
         type: string
@@ -25,101 +26,201 @@ on:
       gpg_passphrase:
         required: true
         description: GPG passphrase for signing packages
-      gpg_private_key:
-        required: true
-        description: GPG private key for signing packages (ASCII-armored)
-      gpg_public_key:
-        required: true
-        description: GPG public key (ASCII-armored)
-      repo_token:
-        required: true
-        description: Token for repository access (GitHub token)
       personal_access_token:
         required: true
         description: Personal Access Token for accessing private repositories
+      GITHUB_TOKEN:
+        required: true
+        description: GitHub token for repository access
 
 jobs:
   build:
     name: Build and Publish
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
-      - name: Checkout templates repository
-        uses: actions/checkout@v4
         with:
-          repository: Dastagirireddy/github-actions-templates
-          path: templates
-          token: ${{ secrets.repo_token }}
-          
-      - name: Setup Go
+          fetch-depth: 0  # Needed for version detection from git tags
+
+      - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: ${{ inputs.go_version }}
-          
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
-          
-      - name: Make scripts executable
+
+      - name: Prepare build environment
         run: |
+          # Create scripts directory if it doesn't exist
           mkdir -p scripts
-          cp templates/scripts/*.sh scripts/
-          chmod +x scripts/*.sh
-      - run: |
-          ./scripts/setup-gpg.sh \
-            "Dastagirireddy" \
-            "dastagirireddy99.r@gmail.com" \
-            "${{ secrets.gpg_passphrase }}"
-        env:
-          GNUPGHOME: /tmp/gnupg
-      - run: |
+          
+          # Copy scripts from the repository
+          cp -r ./scripts/*.sh ./ || true
+          
+          # Make scripts executable
+          chmod +x ./scripts/*.sh
+          
+      - name: Build Debian package
+        run: |
+          # Build the package
           ./scripts/build-deb.sh "${{ inputs.app_name }}"
+          
+          # Verify the .deb file was created
+          echo "Built package:"
+          ls -la build/deb/*.deb
+          
+          # Create packages directory if it doesn't exist
+          mkdir -p packages
+          
+          # Move the .deb file to the packages directory
+          mv build/deb/*.deb packages/
+          
+          # Verify the file was moved
+          echo "Package moved to:"
+          ls -la packages/
         env:
           VERSION: ${{ github.ref_name }}
-      - uses: actions/upload-artifact@v4
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 0
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
         with:
           name: deb-package
-          path: build/deb/*.deb
-      - name: Import GPG keys
-        if: startsWith(github.ref, 'refs/tags/')
+          path: packages/*.deb
+          if-no-files-found: error
+          retention-days: 17
+
+  update-apt-repo:
+    name: Update APT Repository
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Initialize APT repository
         run: |
-          mkdir -p /tmp/gnupg
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" > /tmp/gnupg/private.asc
-          echo "${{ secrets.GPG_PUBLIC_KEY }}" > /tmp/gnupg/public.asc
-          gpg --import /tmp/gnupg/private.asc
-          gpg --import /tmp/gnupg/public.asc
+          mkdir -p apt-repo
+          cd apt-repo
+          git init
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git remote add origin https://${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git
+          git fetch --depth=1 origin main || true  # Ignore if branch doesn't exist yet
+          git checkout -b main || git checkout -b main  # Create or switch to main branch
+
+      - name: Download built package
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-package
+          path: packages
+
+      - name: Setup dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev gnupg2 git
+
+      - name: Setup GPG Key
+        run: |
+          # Create GPG directory and set permissions
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
+
+          # Create GPG config
+          cat > ~/.gnupg/gpg.conf <<EOL
+          use-agent
+          pinentry-mode loopback
+          EOL
+
+          # Generate a new GPG key non-interactively
+          cat > /tmp/gpg-batch <<EOL
+          %no-protection
+          Key-Type: RSA
+          Key-Length: 4096
+          Subkey-Type: RSA
+          Subkey-Length: 4096
+          Name-Real: ${{ inputs.app_name }} Repository
+          Name-Email: noreply@${{ inputs.app_name }}.com
+          Expire-Date: 0
+          %commit
+          EOL
+
+          gpg --batch --generate-key /tmp/gpg-batch
+
+          # Export the public key
+          mkdir -p apt-repo
+          KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^fpr' | cut -d: -f10 | head -n1)
+          gpg --armor --export $KEY_ID > apt-repo/KEY.gpg
+
+          echo "GPG key generated and exported to apt-repo/KEY.gpg"
+          echo "Key ID: $KEY_ID"
+          echo "GPG_KEY_ID=$KEY_ID" >> $GITHUB_ENV
+
+      - name: Add package to repository
+        working-directory: apt-repo
+        run: |
+          # Ensure pool/main directory exists
+          mkdir -p pool/main
           
-      - name: Update APT repository
-        if: startsWith(github.ref, 'refs/tags/')
+          # Copy the package to the pool
+          find ../packages -name '*.deb' -exec cp -v {} pool/main/ \;
+          
+          # Create required directories for each architecture
+          for arch in amd64; do  # Simplified to just amd64 for now
+            mkdir -p dists/${{ inputs.distribution }}/main/binary-$arch
+          done
+          
+          # Generate Packages files for each architecture
+          for arch in amd64; do
+            echo "Processing architecture: $arch"
+            (cd pool/main && \
+             dpkg-scanpackages --arch $arch . /dev/null > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages && \
+             gzip -9c ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages.gz)
+          done
+          
+          # Generate Release file
+          cd dists/${{ inputs.distribution }}
+          apt-ftparchive release . > Release
+          
+          # Sign the Release file
+          gpg --batch --armor --detach-sign -o Release.gpg Release
+          gpg --batch --clearsign -o InRelease Release
+          
+          cd ../../
+
+      - name: Commit and push changes
+        working-directory: apt-repo
         env:
-          REPO_URL: https://${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git
+          GIT_AUTHOR_NAME: "GitHub Actions"
+          GIT_AUTHOR_EMAIL: "actions@github.com"
+          GIT_COMMITTER_NAME: "GitHub Actions"
+          GIT_COMMITTER_EMAIL: "actions@github.com"
         run: |
-          # Configure git user
+          # Configure git
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           
-          # Clone the repository using PAT
-          git clone $REPO_URL apt-repo
-          
-          cd apt-repo
-          
-          # Create directory structure and copy package
-          mkdir -p pool/${{ inputs.distribution }}/${{ inputs.component }}
-          cp ../build/deb/*.deb pool/${{ inputs.distribution }}/${{ inputs.component }}/
-          
-          # Update repository metadata
-          apt-ftparchive packages . > Packages
-          gzip -k -f Packages
-          apt-ftparchive release . > Release
-          
-          # Sign the repository
-          gpg --clearsign -o InRelease Release
-          gpg -abs -o Release.gpg Release
-          
-          # Commit and push changes
+          # Add all files
           git add .
-          git commit -m "Add ${{ inputs.app_name }} ${{ github.ref_name }}" || echo "No changes to commit"
-          git push $REPO_URL main
+          
+          # Check if there are changes to commit
+          if ! git diff --staged --quiet; then
+            echo "Committing changes..."
+            git commit -m "Update repository with new package version ${{ github.ref_name }}"
+            
+            # Set the remote URL with the token
+            REPO_URL="https://x-access-token:${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git"
+            git remote set-url origin "$REPO_URL"
+            
+            # Push changes
+            git push -u origin main --force
+            echo "Changes pushed successfully!"
+          else
+            echo "No changes to commit"
+          fi
