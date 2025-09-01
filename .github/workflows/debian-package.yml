@@ -74,19 +74,36 @@ jobs:
           path: build/deb/*.deb
       - if: startsWith(github.ref, 'refs/tags/')
         run: |
-          git clone https://${{ secrets.repo_token }}@github.com/${{ inputs.apt_repo }}.git apt-repo
+          # Configure git to use the token for authentication
+          git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+          
+          # Clone the repository
+          git clone https://github.com/${{ inputs.apt_repo }}.git apt-repo
+          
           cd apt-repo
+          
+          # Configure git user
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          # Import GPG keys
           gpg --import /tmp/gnupg/private.asc
           gpg --import /tmp/gnupg/public.asc
+          
+          # Create directory structure and copy package
           mkdir -p pool/${{ inputs.distribution }}/${{ inputs.component }}
           cp ../build/deb/*.deb pool/${{ inputs.distribution }}/${{ inputs.component }}/
+          
+          # Update repository metadata
           apt-ftparchive packages . > Packages
           gzip -k -f Packages
           apt-ftparchive release . > Release
+          
+          # Sign the repository
           gpg --clearsign -o InRelease Release
           gpg -abs -o Release.gpg Release
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
+          
+          # Commit and push changes
           git add .
-          git commit -m "Add ${{ inputs.app_name }} ${{ github.ref_name }}"
+          git commit -m "Add ${{ inputs.app_name }} ${{ github.ref_name }}" || echo "No changes to commit"
           git push origin main
