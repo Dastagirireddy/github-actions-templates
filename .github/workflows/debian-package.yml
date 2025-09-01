@@ -45,10 +45,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
           
-      - name: Copy build scripts
+      - name: Make scripts executable
         run: |
-          mkdir -p scripts
-          cp -r .github/scripts/*.sh scripts/
           chmod +x scripts/*.sh
       - run: |
           ./scripts/setup-gpg.sh \
