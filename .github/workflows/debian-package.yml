@@ -48,25 +48,50 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
 
-      - name: Prepare build environment
+      - name: Checkout templates repository
+        uses: actions/checkout@v4
+        with:
+          repository: Dastagirireddy/github-actions-templates
+          path: .github/actions-templates
+          token: ${{ secrets.GITHUB_TOKEN }}  # Use the default GITHUB_TOKEN
+          
+      - name: Setup build environment
         run: |
-          # Create scripts directory if it doesn't exist
+          # Create scripts directory
           mkdir -p scripts
           
-          # Copy scripts from the repository
-          cp -r ./scripts/*.sh ./ || true
+          # Copy scripts from templates
+          cp .github/actions-templates/scripts/*.sh scripts/
           
           # Make scripts executable
-          chmod +x ./scripts/*.sh
+          chmod +x scripts/*.sh
+          
+          # List files for debugging
+          echo "Current directory contents:"
+          ls -la
+          echo "Scripts directory contents:"
+          ls -la scripts/
           
       - name: Build Debian package
         run: |
+          # Show current directory structure
+          echo "Current working directory: $(pwd)"
+          echo "Listing files in scripts directory:"
+          ls -la scripts/
+          
           # Build the package
-          ./scripts/build-deb.sh "${{ inputs.app_name }}"
+          if [ -f "scripts/build-deb.sh" ]; then
+            echo "Building package using scripts/build-deb.sh"
+            scripts/build-deb.sh "${{ inputs.app_name }}"
+          else
+            echo "Error: build-deb.sh not found in scripts/ directory"
+            ls -la
+            exit 1
+          fi
           
           # Verify the .deb file was created
           echo "Built package:"
-          ls -la build/deb/*.deb
+          ls -la build/deb/*.deb || echo "No .deb files found in build/deb/"
           
           # Create packages directory if it doesn't exist
           mkdir -p packages
