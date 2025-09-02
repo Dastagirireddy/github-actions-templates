@@ -6,7 +6,7 @@ APP_NAME="${1:-myapp}"
 VERSION=${VERSION:-$(git describe --tags --always --dirty)}
 # Remove 'v' prefix from version if it exists
 VERSION=${VERSION#v}
-ARCH="amd64"
+ARCH="${2:-arm64}"
 BUILD_DIR="build"
 DEB_DIR="${BUILD_DIR}/deb"
 PACKAGE_DIR="${DEB_DIR}/${APP_NAME}_${VERSION}_${ARCH}"
@@ -19,7 +19,7 @@ mkdir -p "${PACKAGE_DIR}/DEBIAN" \
 
 # Build the application
 echo "Building ${APP_NAME} ${VERSION}..."
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${PACKAGE_DIR}/usr/local/bin/${APP_NAME}"
+CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} go build -o "${PACKAGE_DIR}/usr/local/bin/${APP_NAME}"
 
 # Create control file
 cat > "${PACKAGE_DIR}/DEBIAN/control" << EOF
