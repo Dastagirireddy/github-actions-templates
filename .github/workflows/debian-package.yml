@@ -58,7 +58,7 @@ jobs:
           repository: Dastagirireddy/github-actions-templates
           path: .github/actions-templates
           token: ${{ secrets.GITHUB_TOKEN }}  # Use the default GITHUB_TOKEN
-          
+
       - name: Setup build environment
         run: |
           # Create scripts directory
@@ -75,7 +75,7 @@ jobs:
           ls -la
           echo "Scripts directory contents:"
           ls -la scripts/
-          
+
       - name: Build Debian package
         run: |
           # Show current directory structure
@@ -189,32 +189,46 @@ jobs:
         working-directory: apt-repo
         run: |
           # Ensure pool/main directory exists
+          echo "🚀 Starting repository update process"
+          echo "📁 Creating pool/main directory structure"
           mkdir -p pool/main
           
           # Copy the package to the pool
-          find ../packages -name '*.deb' -exec cp -v {} pool/main/ \;
+          echo "📦 Copying .deb packages to pool/main"
+          find ../packages -name '*.deb' -exec echo "  📄 Copying: {}" \; -exec cp -v {} pool/main/ \;
           
           # Create required directories for each architecture
-          for arch in amd64; do  # Simplified to just amd64 for now
+          echo "📂 Creating directory structure for architectures"
+          for arch in amd64 arm64; do
+            echo "  🏗️  Creating directory for architecture: $arch"
             mkdir -p dists/${{ inputs.distribution }}/main/binary-$arch
           done
           
           # Generate Packages files for each architecture
-          for arch in amd64; do
-            echo "Processing architecture: $arch"
+          echo "🔄 Generating Packages files"
+          for arch in amd64 arm64; do
+            echo "  🔄 Processing architecture: $arch"
             (cd pool/main && \
-             dpkg-scanpackages --arch $arch . /dev/null > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages && \
-             gzip -9c ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages.gz)
+            echo "    📝 Running dpkg-scanpackages for $arch" && \
+            dpkg-scanpackages --arch $arch . /dev/null > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages && \
+            echo "    🗜️  Compressing Packages file for $arch" && \
+            gzip -9c ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages.gz)
           done
           
           # Generate Release file
+          echo "📄 Generating Release file"
           cd dists/${{ inputs.distribution }}
+          echo "  📋 Creating Release file"
           apt-ftparchive release . > Release
           
           # Sign the Release file
+          echo "🔑 Signing Release file"
+          echo "  🔐 Creating detached signature (Release.gpg)"
           gpg --batch --armor --detach-sign -o Release.gpg Release
+          echo "  🔏 Creating clear-signed InRelease"
           gpg --batch --clearsign -o InRelease Release
           
+          echo "✅ Repository update completed successfully"
           cd ../../
 
       - name: Commit and push changes
@@ -236,11 +250,11 @@ jobs:
           if ! git diff --staged --quiet; then
             echo "Committing changes..."
             git commit -m "Update repository with new package version ${{ github.ref_name }}"
-            
+          
             # Set the remote URL with the token
             REPO_URL="https://x-access-token:${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git"
             git remote set-url origin "$REPO_URL"
-            
+          
             # Push changes
             git push -u origin main --force
             echo "Changes pushed successfully!"
