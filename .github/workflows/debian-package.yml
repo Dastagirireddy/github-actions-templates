@@ -30,12 +30,18 @@ on:
       personal_access_token:
         required: true
         description: Personal Access Token for accessing private repositories
+      gpg_private_key:
+        required: true
+        description: Private GPG key for signing the repository
+      gpg_passphrase:
+        required: false
+        description: Passphrase for the GPG key (if applicable)
 
 jobs:
   build:
     name: Build and Publish
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -57,54 +63,20 @@ jobs:
         with:
           repository: Dastagirireddy/github-actions-templates
           path: .github/actions-templates
-          token: ${{ secrets.GITHUB_TOKEN }}  # Use the default GITHUB_TOKEN
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup build environment
         run: |
-          # Create scripts directory
           mkdir -p scripts
-          
-          # Copy scripts from templates
           cp .github/actions-templates/scripts/*.sh scripts/
-          
-          # Make scripts executable
           chmod +x scripts/*.sh
-          
-          # List files for debugging
-          echo "Current directory contents:"
-          ls -la
-          echo "Scripts directory contents:"
           ls -la scripts/
 
       - name: Build Debian package
         run: |
-          # Show current directory structure
-          echo "Current working directory: $(pwd)"
-          echo "Listing files in scripts directory:"
-          ls -la scripts/
-          
-          # Build the package
-          if [ -f "scripts/build-deb.sh" ]; then
-            echo "Building package using scripts/build-deb.sh"
-            scripts/build-deb.sh "${{ inputs.app_name }}" "${{ inputs.arch }}"
-          else
-            echo "Error: build-deb.sh not found in scripts/ directory"
-            ls -la
-            exit 1
-          fi
-          
-          # Verify the .deb file was created
-          echo "Built package:"
-          ls -la build/deb/*.deb || echo "No .deb files found in build/deb/"
-          
-          # Create packages directory if it doesn't exist
+          scripts/build-deb.sh "${{ inputs.app_name }}" "${{ inputs.arch }}"
           mkdir -p packages
-          
-          # Move the .deb file to the packages directory
           mv build/deb/*.deb packages/
-          
-          # Verify the file was moved
-          echo "Package moved to:"
           ls -la packages/
         env:
           VERSION: ${{ github.ref_name }}
@@ -125,7 +97,7 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Initialize APT repository
         run: |
@@ -135,8 +107,8 @@ jobs:
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
           git remote add origin https://${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git
-          git fetch --depth=1 origin main || true  # Ignore if branch doesn't exist yet
-          git checkout -b main || git checkout -b main  # Create or switch to main branch
+          git fetch --depth=1 origin main || true
+          git checkout -b main || git checkout -b main
 
       - name: Download built package
         uses: actions/download-artifact@v4
@@ -149,86 +121,37 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y dpkg-dev gnupg2 git
 
-      - name: Setup GPG Key
+      - name: Import Stable GPG Key
         run: |
-          # Create GPG directory and set permissions
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
-
-          # Create GPG config
-          cat > ~/.gnupg/gpg.conf <<EOL
-          use-agent
-          pinentry-mode loopback
-          EOL
-
-          # Generate a new GPG key non-interactively
-          cat > /tmp/gpg-batch <<EOL
-          %no-protection
-          Key-Type: RSA
-          Key-Length: 4096
-          Subkey-Type: RSA
-          Subkey-Length: 4096
-          Name-Real: ${{ inputs.app_name }} Repository
-          Name-Email: noreply@${{ inputs.app_name }}.com
-          Expire-Date: 0
-          %commit
-          EOL
-
-          gpg --batch --generate-key /tmp/gpg-batch
-
-          # Export the public key
-          mkdir -p apt-repo
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+            echo "passphrase=${GPG_PASSPHRASE}" > ~/.gnupg/gpg-agent.conf
+          fi
+          
           KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^fpr' | cut -d: -f10 | head -n1)
-          gpg --armor --export $KEY_ID > apt-repo/KEY.gpg
-
-          echo "GPG key generated and exported to apt-repo/KEY.gpg"
-          echo "Key ID: $KEY_ID"
           echo "GPG_KEY_ID=$KEY_ID" >> $GITHUB_ENV
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.gpg_private_key }}
+          GPG_PASSPHRASE: ${{ secrets.gpg_passphrase }}
 
       - name: Add package to repository
         working-directory: apt-repo
         run: |
-          # Ensure pool/main directory exists
-          echo "🚀 Starting repository update process"
-          echo "📁 Creating pool/main directory structure"
           mkdir -p pool/main
-          
-          # Copy the package to the pool
-          echo "📦 Copying .deb packages to pool/main"
-          find ../packages -name '*.deb' -exec echo "  📄 Copying: {}" \; -exec cp -v {} pool/main/ \;
-          
-          # Create required directories for each architecture
-          echo "📂 Creating directory structure for architectures"
+          find ../packages -name '*.deb' -exec cp -v {} pool/main/ \;
           for arch in amd64 arm64; do
-            echo "  🏗️  Creating directory for architecture: $arch"
             mkdir -p dists/${{ inputs.distribution }}/main/binary-$arch
-          done
-          
-          # Generate Packages files for each architecture
-          echo "🔄 Generating Packages files"
-          for arch in amd64 arm64; do
-            echo "  🔄 Processing architecture: $arch"
-            (cd pool/main && \
-            echo "    📝 Running dpkg-scanpackages for $arch" && \
-            dpkg-scanpackages --arch $arch . /dev/null > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages && \
-            echo "    🗜️  Compressing Packages file for $arch" && \
+            (cd pool/main && dpkg-scanpackages --arch $arch . /dev/null > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages && \
             gzip -9c ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages.gz)
           done
-          
-          # Generate Release file
-          echo "📄 Generating Release file"
           cd dists/${{ inputs.distribution }}
-          echo "  📋 Creating Release file"
           apt-ftparchive release . > Release
-          
-          # Sign the Release file
-          echo "🔑 Signing Release file"
-          echo "  🔐 Creating detached signature (Release.gpg)"
           gpg --batch --armor --detach-sign -o Release.gpg Release
-          echo "  🔏 Creating clear-signed InRelease"
           gpg --batch --clearsign -o InRelease Release
-          
-          echo "✅ Repository update completed successfully"
           cd ../../
 
       - name: Commit and push changes
@@ -239,25 +162,14 @@ jobs:
           GIT_COMMITTER_NAME: "GitHub Actions"
           GIT_COMMITTER_EMAIL: "actions@github.com"
         run: |
-          # Configure git
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          
-          # Add all files
           git add .
-          
-          # Check if there are changes to commit
           if ! git diff --staged --quiet; then
-            echo "Committing changes..."
             git commit -m "Update repository with new package version ${{ github.ref_name }}"
-          
-            # Set the remote URL with the token
             REPO_URL="https://x-access-token:${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git"
             git remote set-url origin "$REPO_URL"
-          
-            # Push changes
             git push -u origin main --force
-            echo "Changes pushed successfully!"
           else
             echo "No changes to commit"
           fi
