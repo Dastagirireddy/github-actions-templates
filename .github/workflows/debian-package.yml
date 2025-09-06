@@ -165,3 +165,4 @@ jobs:
             git push -u origin main --force-with-lease
           else
             echo "No changes to commit"
+          fi
