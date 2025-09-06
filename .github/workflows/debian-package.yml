@@ -25,7 +25,7 @@ on:
       arch:
         required: false
         type: string
-        default: 'arm64'  # Default to arm64
+        default: 'arm64'
     secrets:
       personal_access_token:
         required: true
@@ -33,9 +33,6 @@ on:
       gpg_private_key:
         required: true
         description: Private GPG key for signing the repository
-      gpg_passphrase:
-        required: false
-        description: Passphrase for the GPG key (if applicable)
 
 jobs:
   build:
@@ -46,7 +43,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Needed for version detection from git tags
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -121,37 +118,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y dpkg-dev gnupg2 git
 
-      - name: Import Stable GPG Key
+      - name: Import GPG Private Key
         run: |
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
-          
-          if [ -n "${GPG_PASSPHRASE:-}" ]; then
-            echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
-            echo "passphrase=${GPG_PASSPHRASE}" > ~/.gnupg/gpg-agent.conf
-          fi
-          
           KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^fpr' | cut -d: -f10 | head -n1)
           echo "GPG_KEY_ID=$KEY_ID" >> $GITHUB_ENV
         env:
           GPG_PRIVATE_KEY: ${{ secrets.gpg_private_key }}
-          GPG_PASSPHRASE: ${{ secrets.gpg_passphrase }}
 
       - name: Add package to repository
         working-directory: apt-repo
         run: |
           mkdir -p pool/main
           find ../packages -name '*.deb' -exec cp -v {} pool/main/ \;
+
           for arch in amd64 arm64; do
             mkdir -p dists/${{ inputs.distribution }}/main/binary-$arch
-            (cd pool/main && dpkg-scanpackages --arch $arch . /dev/null > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages && \
-            gzip -9c ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages.gz)
+            (cd pool/main && \
+              dpkg-scanpackages --arch $arch . /dev/null > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages && \
+              gzip -9c ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages.gz)
           done
+
           cd dists/${{ inputs.distribution }}
           apt-ftparchive release . > Release
-          gpg --batch --armor --detach-sign -o Release.gpg Release
-          gpg --batch --clearsign -o InRelease Release
+          gpg --batch --yes --armor --detach-sign -o Release.gpg Release
+          gpg --batch --yes --clearsign -o InRelease Release
           cd ../../
 
       - name: Commit and push changes
@@ -169,7 +162,6 @@ jobs:
             git commit -m "Update repository with new package version ${{ github.ref_name }}"
             REPO_URL="https://x-access-token:${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git"
             git remote set-url origin "$REPO_URL"
-            git push -u origin main --force
+            git push -u origin main --force-with-lease
           else
             echo "No changes to commit"
-          fi
