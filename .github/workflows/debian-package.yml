@@ -103,9 +103,16 @@ jobs:
           git init
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
-          git remote add origin https://${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git
-          git fetch --depth=1 origin main || true
-          git checkout -b main || git checkout -b main
+
+          # Try to fetch the branch if it exists
+          if git ls-remote --exit-code origin main; then
+            git fetch origin main
+            git checkout main
+          else
+            git checkout -b main
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.personal_access_token }}
 
       - name: Download built package
         uses: actions/download-artifact@v4
