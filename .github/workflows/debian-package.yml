@@ -139,9 +139,9 @@ jobs:
 
           # Generate Release file directly with apt-ftparchive - no conf needed
           apt-ftparchive \
-            -o APT::FTPArchive::Codename=${{ inputs.distribution }} \
-            -o APT::FTPArchive::Suite=${{ inputs.distribution }} \
-            -o APT::FTPArchive::Components=${{ inputs.component }} \
+            -o APT::FTPArchive::Codename="${{ inputs.distribution }}" \
+            -o APT::FTPArchive::Suite="${{ inputs.distribution }}" \
+            -o APT::FTPArchive::Components="${{ inputs.component }}" \
             -o APT::FTPArchive::Architectures="amd64 arm64" \
             -o APT::FTPArchive::Origin="Nuboxi" \
             -o APT::FTPArchive::Label="Nuboxi Package Repository" \
