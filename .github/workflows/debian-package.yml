@@ -139,12 +139,12 @@ jobs:
 
           # Generate Release file directly with apt-ftparchive - no conf needed
           apt-ftparchive \
-            -o APT::FTPArchive::Codename="${{ inputs.distribution }}" \
-            -o APT::FTPArchive::Suite="${{ inputs.distribution }}" \
-            -o APT::FTPArchive::Components="${{ inputs.component }}" \
-            -o APT::FTPArchive::Architectures="amd64 arm64" \
-            -o APT::FTPArchive::Origin="Nuboxi" \
-            -o APT::FTPArchive::Label="Nuboxi Package Repository" \
+            -o APT::FTPArchive::Release::Codename="${{ inputs.distribution }}" \
+            -o APT::FTPArchive::Release::Suite="${{ inputs.distribution }}" \
+            -o APT::FTPArchive::Release::Components="${{ inputs.component }}" \
+            -o APT::FTPArchive::Release::Architectures="amd64 arm64" \
+            -o APT::FTPArchive::Release::Origin="Nuboxi" \
+            -o APT::FTPArchive::Release::Label="Nuboxi Package Repository" \
             release . > Release
           
           echo "Release file content:"
