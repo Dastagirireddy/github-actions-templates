@@ -146,6 +146,8 @@ jobs:
             -o APT::FTPArchive::Origin="Nuboxi" \
             -o APT::FTPArchive::Label="Nuboxi Package Repository" \
             release . > Release
+          
+          cat Release
 
           # Sign Release
           gpg --batch --armor --detach-sign -o Release.gpg Release
