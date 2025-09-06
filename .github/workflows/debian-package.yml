@@ -140,7 +140,7 @@ jobs:
           cd dists/${{ inputs.distribution }}
 
           # Generate apt-ftparchive.conf for proper fields
-          cat > apt-ftparchive.conf <<EOF
+          cat > apt-ftparchive.conf << 'EOF'
   APT
   {
     FTPArchive
