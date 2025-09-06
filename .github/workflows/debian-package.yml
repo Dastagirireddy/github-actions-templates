@@ -167,8 +167,11 @@ jobs:
           git add .
           if ! git diff --staged --quiet; then
             git commit -m "Update repository with new package version ${{ github.ref_name }}"
-            REPO_URL="https://x-access-token:${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git"
-            git remote set-url origin "$REPO_URL"
+            
+            if ! git remote | grep -q origin; then
+              git remote add origin "https://x-access-token:${{ secrets.personal_access_token }}@github.com/Dastagirireddy/nuboxi-apt-repo.git"
+            fi
+            
             git push -u origin main --force-with-lease
           else
             echo "No changes to commit"
