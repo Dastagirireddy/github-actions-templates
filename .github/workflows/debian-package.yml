@@ -138,7 +138,11 @@ jobs:
           done
 
           cd dists/${{ inputs.distribution }}
-          apt-ftparchive release . > Release
+          # Generate Release file with proper fields
+          apt-ftparchive -o APT::FTPArchive::Codename=${{ inputs.distribution }} \
+                          -o APT::FTPArchive::Architectures="amd64 arm64" \
+                          -o APT::FTPArchive::Components="${{ inputs.component }}" release . > Release
+
           gpg --batch --armor --detach-sign -o Release.gpg Release
           gpg --batch --clearsign -o InRelease Release
           cd ../../
