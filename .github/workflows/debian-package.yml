@@ -51,9 +51,7 @@ jobs:
           go-version: ${{ inputs.go_version }}
 
       - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
+        run: sudo apt-get update && sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
 
       - name: Checkout templates repository
         uses: actions/checkout@v4
@@ -104,15 +102,9 @@ jobs:
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
 
-          # Try to fetch the branch if it exists
-          if git ls-remote --exit-code origin main; then
-            git fetch origin main
-            git checkout main
-          else
-            git checkout -b main
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.personal_access_token }}
+          git remote add origin "https://x-access-token:${{ secrets.personal_access_token }}@github.com/${{ inputs.apt_repo }}.git"
+          git fetch origin main || true
+          git checkout -B main origin/main || git checkout -b main
 
       - name: Download built package
         uses: actions/download-artifact@v4
@@ -121,15 +113,13 @@ jobs:
           path: packages
 
       - name: Setup dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y dpkg-dev gnupg2 git
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev gnupg2 git
 
       - name: Import GPG Private Key
         run: |
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "${GPG_PRIVATE_KEY}" | gpg --batch --import
           KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^fpr' | cut -d: -f10 | head -n1)
           echo "GPG_KEY_ID=$KEY_ID" >> $GITHUB_ENV
         env:
@@ -143,15 +133,14 @@ jobs:
 
           for arch in amd64 arm64; do
             mkdir -p dists/${{ inputs.distribution }}/main/binary-$arch
-            (cd pool/main && \
-              dpkg-scanpackages --arch $arch . /dev/null > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages && \
-              gzip -9c ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages.gz)
+            (cd pool/main && dpkg-scanpackages --arch $arch . /dev/null > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages \
+            && gzip -9c ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages > ../../dists/${{ inputs.distribution }}/main/binary-$arch/Packages.gz)
           done
 
           cd dists/${{ inputs.distribution }}
           apt-ftparchive release . > Release
-          gpg --batch --yes --armor --detach-sign -o Release.gpg Release
-          gpg --batch --yes --clearsign -o InRelease Release
+          gpg --batch --armor --detach-sign -o Release.gpg Release
+          gpg --batch --clearsign -o InRelease Release
           cd ../../
 
       - name: Commit and push changes
@@ -161,17 +150,11 @@ jobs:
           GIT_AUTHOR_EMAIL: "actions@github.com"
           GIT_COMMITTER_NAME: "GitHub Actions"
           GIT_COMMITTER_EMAIL: "actions@github.com"
+          PERSONAL_ACCESS_TOKEN: ${{ secrets.personal_access_token }}
         run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
           git add .
           if ! git diff --staged --quiet; then
             git commit -m "Update repository with new package version ${{ github.ref_name }}"
-            
-            if ! git remote | grep -q origin; then
-              git remote add origin "https://x-access-token:${{ secrets.personal_access_token }}@github.com/Dastagirireddy/nuboxi-apt-repo.git"
-            fi
-            
             git push -u origin main --force-with-lease
           else
             echo "No changes to commit"
