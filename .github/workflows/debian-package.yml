@@ -110,7 +110,7 @@ jobs:
           path: packages
 
       - name: Setup dependencies
-        run: sudo apt-get update && sudo apt-get install -y dpkg-dev gnupg2 git
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev gnupg2 git apt-utils tree
 
       - name: Import GPG Private Key
         run: |
@@ -147,7 +147,11 @@ jobs:
             -o APT::FTPArchive::Label="Nuboxi Package Repository" \
             release . > Release
           
+          echo "Release file content:"
           cat Release
+          
+          echo "Repository directory content:"
+          tree
 
           # Sign Release
           gpg --batch --armor --detach-sign -o Release.gpg Release
