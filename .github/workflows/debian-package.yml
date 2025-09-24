@@ -122,27 +122,44 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.gpg_private_key }}
 
+      - name: Clean up existing packages for architecture
+        working-directory: apt-repo
+        run: |
+          # Remove any existing .deb files for this package and architecture
+          if [ -d "pool/main" ]; then
+            find pool/main -name "*_${{ inputs.arch }}.deb" -delete
+            # Remove any empty directories
+            find pool -type d -empty -delete
+          fi
+          
+          # Clean up old Packages files for this architecture
+          if [ -d "dists/${{ inputs.distribution }}/main/binary-${{ inputs.arch }}" ]; then
+            rm -f "dists/${{ inputs.distribution }}/main/binary-${{ inputs.arch }}/Packages"*
+          fi
+
       - name: Add package to repository
         working-directory: apt-repo
         run: |
+          # Create pool directory
           mkdir -p pool/main
+          
+          # Copy the built package
           find ../packages -name '*.deb' -exec cp -v {} pool/main/ \;
+          
+          # Create directory structure for the specific architecture
+          mkdir -p "dists/${{ inputs.distribution }}/main/binary-${{ inputs.arch }}"
+          
+          # Generate Packages file only for the specified architecture
+          dpkg-scanpackages --arch ${{ inputs.arch }} pool/main /dev/null > "dists/${{ inputs.distribution }}/main/binary-${{ inputs.arch }}/Packages"
+          gzip -k -9 "dists/${{ inputs.distribution }}/main/binary-${{ inputs.arch }}/Packages"
 
-          # Build Packages files
-          for arch in amd64 arm64; do
-            mkdir -p dists/${{ inputs.distribution }}/main/binary-$arch
-            dpkg-scanpackages --arch $arch pool/main /dev/null > dists/${{ inputs.distribution }}/main/binary-$arch/Packages
-            gzip -k -9 dists/${{ inputs.distribution }}/main/binary-$arch/Packages
-          done
-
-          cd dists/${{ inputs.distribution }}
-
-          # Generate Release file directly with apt-ftparchive - no conf needed
+          # Generate Release file with only the specified architecture
+          cd "dists/${{ inputs.distribution }}"
           apt-ftparchive \
             -o APT::FTPArchive::Release::Codename="${{ inputs.distribution }}" \
             -o APT::FTPArchive::Release::Suite="${{ inputs.distribution }}" \
             -o APT::FTPArchive::Release::Components="${{ inputs.component }}" \
-            -o APT::FTPArchive::Release::Architectures="amd64 arm64" \
+            -o APT::FTPArchive::Release::Architectures="${{ inputs.arch }}" \
             -o APT::FTPArchive::Release::Origin="Nuboxi" \
             -o APT::FTPArchive::Release::Label="Nuboxi Package Repository" \
             release . > Release
