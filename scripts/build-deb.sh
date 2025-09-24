@@ -63,20 +63,50 @@ cat > "${PACKAGE_DIR}/DEBIAN/postinst" << 'EOF'
 #!/bin/sh
 set -e
 
-# Handle systemd service if enabled
-if [ "$1" = "configure" ] && [ -f "/lib/systemd/system/${APP_NAME}.service" ]; then
-    # Reload systemd to pick up new unit file
-    systemctl daemon-reload >/dev/null 2>&1 || :
-    
-    # Enable and start the service
-    systemctl enable ${APP_NAME}.service >/dev/null 2>&1 || :
-    systemctl start ${APP_NAME}.service >/dev/null 2>&1 || :
+# Get the package name from dpkg
+PACKAGE_NAME="${DPKG_MAINTSCRIPT_PACKAGE:-$1}"
+SERVICE_NAME="${PACKAGE_NAME}.service"
+SERVICE_FILE="/lib/systemd/system/${SERVICE_NAME}"
+
+# Only proceed if we're configuring the package
+if [ "$1" != "configure" ]; then
+    exit 0
 fi
 
-# Handle upgrades
-if [ "$1" = "configure" ] && [ -d "/run/systemd/system" ]; then
-    systemctl try-restart ${APP_NAME}.service >/dev/null 2>&1 || :
+# Check if systemd is available
+if ! command -v systemctl >/dev/null 2>&1; then
+    echo "systemctl not found, skipping service setup"
+    exit 0
 fi
+
+# Check if the service file exists
+if [ ! -f "${SERVICE_FILE}" ]; then
+    echo "Service file ${SERVICE_FILE} not found, skipping service setup"
+    exit 0
+fi
+
+# Reload systemd to pick up new unit file
+if ! systemctl daemon-reload; then
+    echo "Failed to reload systemd daemon" >&2
+    exit 1
+fi
+
+# Enable the service
+if ! systemctl enable "${SERVICE_NAME}" >/dev/null; then
+    echo "Failed to enable ${SERVICE_NAME}" >&2
+    exit 1
+fi
+
+# Start the service if not already running
+if ! systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    if ! systemctl start "${SERVICE_NAME}"; then
+        echo "Failed to start ${SERVICE_NAME}" >&2
+        exit 1
+    fi
+fi
+
+echo "Service ${SERVICE_NAME} enabled and started successfully"
+exit 0
 EOF
 chmod +x "${PACKAGE_DIR}/DEBIAN/postinst"
 
@@ -86,12 +116,33 @@ cat > "${PACKAGE_DIR}/DEBIAN/prerm" << 'EOF'
 #!/bin/sh
 set -e
 
-# Only stop the service if we're removing the package, not upgrading
-if [ "$1" = "remove" ] && [ -x "$(command -v systemctl)" ] && \
-   systemctl is-active --quiet ${APP_NAME}.service 2>/dev/null; then
-    systemctl stop ${APP_NAME}.service || :
-    systemctl disable ${APP_NAME}.service >/dev/null 2>&1 || :
+# Only proceed if we're removing the package, not upgrading
+if [ "$1" != "remove" ]; then
+    exit 0
 fi
+
+# Get the package name from dpkg
+PACKAGE_NAME="${DPKG_MAINTSCRIPT_PACKAGE:-$1}"
+SERVICE_NAME="${PACKAGE_NAME}.service"
+
+# Check if systemd is available
+if ! command -v systemctl >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Stop and disable the service if it's running
+if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    systemctl stop "${SERVICE_NAME}" || :
+fi
+
+if systemctl is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    systemctl disable "${SERVICE_NAME}" >/dev/null 2>&1 || :
+fi
+
+# Reload systemd to apply changes
+systemctl daemon-reload 2>/dev/null || :
+
+exit 0
 EOF
 chmod +x "${PACKAGE_DIR}/DEBIAN/prerm"
 
