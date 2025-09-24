@@ -170,9 +170,16 @@ jobs:
           echo "Repository directory content:"
           tree
 
+          # Clean up old signature files if they exist
+          rm -f Release.gpg InRelease.asc InRelease
+
           # Sign Release
           gpg --batch --armor --detach-sign -o Release.gpg Release
           gpg --batch --clearsign -o InRelease Release
+          
+          # Verify the signatures
+          gpg --verify Release.gpg Release
+          gpg --verify InRelease
 
       - name: Commit and push changes
         working-directory: apt-repo
