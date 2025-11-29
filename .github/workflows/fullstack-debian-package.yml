@@ -96,7 +96,7 @@ jobs:
       - name: Setup build environment
         run: |
           mkdir -p scripts
-          ls -la .github/actions-templates/
+          ls -la .github/actions-templates/scripts
           cp .github/actions-templates/scripts/*.sh scripts/
           chmod +x scripts/*.sh
 
