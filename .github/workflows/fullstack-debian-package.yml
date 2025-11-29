@@ -120,23 +120,40 @@ jobs:
           cp .github/actions-templates/scripts/*.sh scripts/
           chmod +x scripts/*.sh
 
+      - name: Set up cross-compilation for ARM64
+        if: inputs.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CXX=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+          echo "CGO_ENABLED=1" >> $GITHUB_ENV
+          echo "GOOS=linux" >> $GITHUB_ENV
+          echo "GOARCH=arm64" >> $GITHUB_ENV
+          echo "CGO_CFLAGS=--target=aarch64-linux-gnu" >> $GITHUB_ENV
+          echo "CXXFLAGS=--target=aarch64-linux-gnu" >> $GITHUB_ENV
+          echo "LDFLAGS=-fuse-ld=lld --target=aarch64-linux-gnu" >> $GITHUB_ENV
+
       - name: Build Debian package
         run: |
           # Make the build script executable
           chmod +x scripts/build-fullstack-deb.sh
           
-          ls -la
-          
-          ls -la ui
-          ls -la ui/build
+          # Set environment variables for the build
+          if [ "${{ inputs.arch }}" = "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+            export CXX=aarch64-linux-gnu-g++
+            export CGO_ENABLED=1
+            export GOOS=linux
+            export GOARCH=arm64
+          fi
           
           # Pass environment variables to the build script
           if [ -n "${{ inputs.env_vars }}" ]; then
             export ENV_VARS="${{ inputs.env_vars }}"
           fi
           
-          # Build the application with CGO enabled for SQLite
-          export CGO_ENABLED=1
+          # Run the build script with the specified architecture
           scripts/build-fullstack-deb.sh "${{ inputs.app_name }}" "${{ inputs.arch }}" "${{ inputs.env_vars }}"
           
           # Prepare the package for upload
