@@ -74,17 +74,9 @@ jobs:
           echo "pnpm version: $(pnpm --version)"
 
 
-      - name: Checkout templates repository
-        uses: actions/checkout@v4
-        with:
-          repository: Dastagirireddy/github-actions-templates
-          path: .github/actions-templates
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Setup build environment
         run: |
           mkdir -p scripts
-          cp .github/actions-templates/scripts/*.sh scripts/
           chmod +x scripts/*.sh
 
       - name: Build frontend
