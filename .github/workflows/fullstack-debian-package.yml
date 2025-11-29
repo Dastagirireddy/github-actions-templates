@@ -68,10 +68,10 @@ jobs:
           sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: latest
-          run_install: false
+        run: |
+          npm install -g pnpm
+          echo "$(npm config get prefix)/bin" >> $GITHUB_PATH
+          pnpm --version
 
 
       - name: Build frontend
