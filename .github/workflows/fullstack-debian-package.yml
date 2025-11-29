@@ -80,7 +80,13 @@ jobs:
 
       - name: Install dependencies
         working-directory: ui
-        run: pnpm install --frozen-lockfile
+        run: |
+          if [ -f "pnpm-lock.yaml" ]; then
+            pnpm install --frozen-lockfile
+          else
+            echo "No pnpm-lock.yaml found, proceeding with regular install"
+            pnpm install
+          fi
 
       - name: Build frontend
         working-directory: ui

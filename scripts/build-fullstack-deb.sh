@@ -50,13 +50,21 @@ if [ -d "${FRONTEND_DIR}" ]; then
     
     # Install dependencies
     log "Installing UI dependencies with pnpm"
-    pnpm install --frozen-lockfile --prefer-offline || { 
-        log "Failed to install dependencies, trying with --force"
-        pnpm install --frozen-lockfile --force || { 
-            log "Failed to install dependencies"; 
-            exit 1; 
+    if [ -f "pnpm-lock.yaml" ]; then
+        pnpm install --frozen-lockfile --prefer-offline || { 
+            log "Failed to install with frozen lockfile, trying with --force"
+            pnpm install --frozen-lockfile --force || { 
+                log "Failed to install dependencies"; 
+                exit 1; 
+            }
         }
-    }
+    else
+        log "No pnpm-lock.yaml found, proceeding with regular install"
+        pnpm install --prefer-offline || {
+            log "Failed to install dependencies";
+            exit 1;
+        }
+    fi
     
     # Build the Next.js application
     log "Building Next.js application"
