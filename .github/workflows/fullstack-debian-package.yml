@@ -74,11 +74,6 @@ jobs:
           echo "pnpm version: $(pnpm --version)"
 
 
-      - name: Setup build environment
-        run: |
-          mkdir -p scripts
-          chmod +x scripts/*.sh
-
       - name: Build frontend
         working-directory: ui  # Building from the ui directory
         run: |
@@ -90,6 +85,20 @@ jobs:
           # Remove everything except the build folder and .go files
           cd ui
           find . -mindepth 1 -not -name 'build' -not -name '*.go' -not -name 'go.mod' -not -name 'go.sum' -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Checkout templates repository
+        uses: actions/checkout@v4
+        with:
+          repository: Dastagirireddy/github-actions-templates
+          path: .github/actions-templates
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup build environment
+        run: |
+          mkdir -p scripts
+          ls -la .github/actions-templates/
+          cp .github/actions-templates/scripts/*.sh scripts/
+          chmod +x scripts/*.sh
 
       - name: Build Debian package
         run: |
