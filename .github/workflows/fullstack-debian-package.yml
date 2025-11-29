@@ -67,10 +67,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
 
-      - name: Install pnpm using corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@latest --activate
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: latest
+          run_install: false
+
 
       - name: Build frontend
         working-directory: ui  # Building from the ui directory
