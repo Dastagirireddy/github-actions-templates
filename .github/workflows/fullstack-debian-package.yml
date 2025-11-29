@@ -102,6 +102,7 @@ jobs:
             -not -name 'go.mod' \
             -not -name 'go.sum' \
             -not -name 'next.config.mjs' \
+            -not -path './build/*' \
             -exec rm -rf {} + || true
           ls -la build
 
