@@ -121,6 +121,10 @@ jobs:
           # Make the build script executable
           chmod +x scripts/build-fullstack-deb.sh
           
+          ls -la
+          
+          ls -la ui
+          
           # Pass environment variables to the build script
           if [ -n "${{ inputs.env_vars }}" ]; then
             export ENV_VARS="${{ inputs.env_vars }}"
