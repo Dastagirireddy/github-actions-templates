@@ -1,0 +1,152 @@
+name: Fullstack Debian Package
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        required: true
+        type: string
+      go_version:
+        required: false
+        type: string
+        default: '1.25'
+      node_version:
+        required: false
+        type: string
+        default: '20'
+      apt_repo:
+        required: true
+        type: string
+      distribution:
+        required: false
+        type: string
+        default: 'stable'
+      component:
+        required: false
+        type: string
+        default: 'main'
+      arch:
+        required: false
+        type: string
+        default: 'arm64'
+      env_vars:
+        required: false
+        type: string
+        description: 'Comma-separated list of environment variables to include in the package (e.g., "API_URL,DB_HOST,DB_PORT")'
+    secrets:
+      personal_access_token:
+        required: true
+        description: Personal Access Token for accessing private repositories
+      gpg_private_key:
+        required: true
+        description: Private GPG key for signing the repository
+
+jobs:
+  build:
+    name: Build and Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ inputs.go_version }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: 'pnpm'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Build frontend
+        working-directory: ui  # Building from the ui directory
+        run: |
+          pnpm install
+          pnpm run build
+          
+      - name: Clean UI directory
+        run: |
+          # Remove everything except the build folder and .go files
+          cd ui
+          find . -mindepth 1 -not -name 'build' -not -name '*.go' -not -name 'go.mod' -not -name 'go.sum' -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Checkout templates repository
+        uses: actions/checkout@v4
+        with:
+          repository: Dastagirireddy/github-actions-templates
+          path: .github/actions-templates
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup build environment
+        run: |
+          mkdir -p scripts
+          cp .github/actions-templates/scripts/*.sh scripts/
+          chmod +x scripts/*.sh
+
+      - name: Build Debian package
+        run: |
+          # Make the build script executable
+          chmod +x scripts/build-fullstack-deb.sh
+          
+          # Pass environment variables to the build script
+          if [ -n "${{ inputs.env_vars }}" ]; then
+            export ENV_VARS="${{ inputs.env_vars }}"
+          fi
+          
+          # Build the application with CGO enabled for SQLite
+          export CGO_ENABLED=1
+          scripts/build-fullstack-deb.sh "${{ inputs.app_name }}" "${{ inputs.arch }}" "${{ inputs.env_vars }}"
+          
+          # Prepare the package for upload
+          mkdir -p packages
+          mv build/deb/*.deb packages/
+          ls -la packages/
+        env:
+          VERSION: ${{ github.ref_name }}
+          GOOS: linux
+          GOARCH: ${{ inputs.arch }}
+          CGO_ENABLED: 1
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: packages/*.deb
+          if-no-files-found: error
+          retention-days: 17
+
+  update-apt-repo:
+    name: Update APT Repository
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-package
+          path: packages
+
+      - name: Setup APT repository
+        uses: Dastagirireddy/apt-repo-action@v1
+        with:
+          gpg_private_key: ${{ secrets.gpg_private_key }}
+          repo: ${{ inputs.apt_repo }}
+          package: packages/*.deb
+          distribution: ${{ inputs.distribution }}
+          component: ${{ inputs.component }}
+          release: ${{ startsWith(github.ref, 'refs/tags/') && 'true' || 'false' }}
+          gpg_passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          skip_cleanup: 'true'
