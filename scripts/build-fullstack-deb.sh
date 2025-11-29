@@ -37,16 +37,91 @@ mkdir -p "${PACKAGE_DIR}/DEBIAN" \
 log "Creating application directories"
 mkdir -p "${PACKAGE_DIR}/usr/share/${APP_NAME}"
 
-# Copy the UI build folder if it exists
-if [ -d "${FRONTEND_DIR}/build" ]; then
-    log "Copying UI build folder to /usr/share/${APP_NAME}"
-    cp -r "${FRONTEND_DIR}/build" "${PACKAGE_DIR}/usr/share/${APP_NAME}/"
+# Build the Next.js UI
+log "Building Next.js UI in ${FRONTEND_DIR}"
+if [ -d "${FRONTEND_DIR}" ]; then
+    cd "${FRONTEND_DIR}" || { log "Failed to enter ${FRONTEND_DIR}"; exit 1; }
     
-    # Ensure the build directory has the correct permissions
-    find "${PACKAGE_DIR}/usr/share/${APP_NAME}/build" -type d -exec chmod 755 {} \;
-    find "${PACKAGE_DIR}/usr/share/${APP_NAME}/build" -type f -exec chmod 644 {} \;
+    # Ensure pnpm is installed
+    if ! command -v pnpm &> /dev/null; then
+        log "Installing pnpm"
+        npm install -g pnpm@8.15.4 || { log "Failed to install pnpm"; exit 1; }
+    fi
+    
+    # Install dependencies
+    log "Installing UI dependencies with pnpm"
+    pnpm install --frozen-lockfile --prefer-offline || { 
+        log "Failed to install dependencies, trying with --force"
+        pnpm install --frozen-lockfile --force || { 
+            log "Failed to install dependencies"; 
+            exit 1; 
+        }
+    }
+    
+    # Build the Next.js application
+    log "Building Next.js application"
+    NODE_ENV=production pnpm run build || { 
+        log "Next.js build failed"; 
+        exit 1; 
+    }
+    
+    # Verify build output
+    if [ ! -d "build" ]; then
+        log "ERROR: Next.js build output not found in ${FRONTEND_DIR}/build"
+        log "Build directory contents:"
+        ls -la
+        exit 1
+    fi
+    
+    # Go back to the project root
+    cd - > /dev/null || exit 1
+    
+    # Copy all necessary files and directories
+    log "Copying project files to /usr/share/${APP_NAME}"
+    
+    # Copy root level Go files
+    for file in "${FRONTEND_DIR}"/*.go "${FRONTEND_DIR}"/go.mod "${FRONTEND_DIR}"/go.sum; do
+        if [ -f "$file" ]; then
+            cp "$file" "${PACKAGE_DIR}/usr/share/${APP_NAME}/"
+        fi
+    done
+    
+    # Copy the api directory if it exists
+    if [ -d "${FRONTEND_DIR}/api" ]; then
+        mkdir -p "${PACKAGE_DIR}/usr/share/${APP_NAME}/api"
+        cp -r "${FRONTEND_DIR}/api/"* "${PACKAGE_DIR}/usr/share/${APP_NAME}/api/"
+    fi
+    
+    # Create and copy the ui directory contents
+    mkdir -p "${PACKAGE_DIR}/usr/share/${APP_NAME}/ui"
+    
+    # Copy the Next.js build output
+    if [ -d "${FRONTEND_DIR}/build" ]; then
+        cp -r "${FRONTEND_DIR}/build" "${PACKAGE_DIR}/usr/share/${APP_NAME}/ui/"
+    fi
+    
+    # Copy UI Go files
+    for file in "${FRONTEND_DIR}/ui"/*.go; do
+        if [ -f "$file" ]; then
+            cp "$file" "${PACKAGE_DIR}/usr/share/${APP_NAME}/ui/"
+        fi
+    done
+    
+    # Set correct permissions
+    find "${PACKAGE_DIR}/usr/share/${APP_NAME}" -type d -exec chmod 755 {} \;
+    find "${PACKAGE_DIR}/usr/share/${APP_NAME}" -type f -exec chmod 644 {} \;
+    
+    # Make sure main binary is executable
+    if [ -f "${PACKAGE_DIR}/usr/share/${APP_NAME}/main.go" ]; then
+        chmod +x "${PACKAGE_DIR}/usr/share/${APP_NAME}/main.go"
+    fi
+    else
+        log "ERROR: Next.js build output not found in ${FRONTEND_DIR}/build"
+        exit 1
+    fi
 else
-    log "WARNING: UI build folder not found at ${FRONTEND_DIR}/build"
+    log "ERROR: Frontend directory not found at ${FRONTEND_DIR}"
+    exit 1
 fi
 
 # Build the Go application with CGO for SQLite support
@@ -97,6 +172,29 @@ Description: ${APP_NAME} application with embedded web UI
  .
  This package contains the ${APP_NAME} binary and its web assets.
 EOF
+
+# Create systemd service file
+log "Creating systemd service file"
+cat > "${PACKAGE_DIR}/lib/systemd/system/${APP_NAME}.service" << EOF
+[Unit]
+Description=${APP_NAME} Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/usr/share/${APP_NAME}
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/${APP_NAME}
+Restart=always
+EnvironmentFile=-/etc/${APP_NAME}/environment
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Set permissions on the service file
+chmod 644 "${PACKAGE_DIR}/lib/systemd/system/${APP_NAME}.service"
 
 # Create postinst script
 log "Creating post-installation script"

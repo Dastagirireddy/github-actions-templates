@@ -66,25 +66,41 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential fakeroot dpkg-dev gnupg2
 
-      - name: Install pnpm
-        run: |
-          npm install -g pnpm@8.15.4
-          echo "$HOME/.npm-global/bin" >> $GITHUB_PATH
-          echo "$HOME/.npm-global/lib/node_modules/pnpm/bin" >> $GITHUB_PATH
-          echo "pnpm version: $(pnpm --version)"
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.4
+          run_install: false
 
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "PNPM_HOME=$(pnpm store path | xargs dirname | xargs dirname)" >> $GITHUB_ENV
+          echo "$PNPM_HOME" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
 
       - name: Build frontend
-        working-directory: ui  # Building from the ui directory
-        run: |
-          pnpm install
-          pnpm run build
-          
+        working-directory: ui
+        run: pnpm run build
+        env:
+          NODE_ENV: production
+          NODE_OPTIONS: --max_old_space_size=4096
+
       - name: Clean UI directory
+        working-directory: ui
         run: |
-          # Remove everything except the build folder and .go files
-          cd ui
-          find . -mindepth 1 -not -name 'build' -not -name '*.go' -not -name 'go.mod' -not -name 'go.sum' -exec rm -rf {} + 2>/dev/null || true
+          # Keep only the build output and Go files
+          find . -mindepth 1 \
+            -not -name 'build' \
+            -not -path './.next*' \
+            -not -name '*.go' \
+            -not -name 'go.mod' \
+            -not -name 'go.sum' \
+            -not -name 'next.config.mjs' \
+            -exec rm -rf {} + || true
 
       - name: Checkout templates repository
         uses: actions/checkout@v4
