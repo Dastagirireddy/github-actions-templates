@@ -103,6 +103,7 @@ jobs:
             -not -name 'go.sum' \
             -not -name 'next.config.mjs' \
             -exec rm -rf {} + || true
+          ls -la build
 
       - name: Checkout templates repository
         uses: actions/checkout@v4
