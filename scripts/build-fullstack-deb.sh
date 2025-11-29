@@ -17,7 +17,15 @@ ENV_VARS="${3:-}"  # Comma-separated list of environment variables
 
 log "Starting full-stack build process for ${APP_NAME}"
 log "CREATE_SERVICE set to: ${CREATE_SERVICE}"
-VERSION=${VERSION:-$(git describe --tags --always --dirty)}
+
+# Get version from git or use default
+GIT_VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.0.0")
+# Ensure version starts with a digit
+if [[ ! $GIT_VERSION =~ ^[0-9] ]]; then
+    VERSION="0.0.0+${GIT_VERSION}"
+else
+    VERSION="${GIT_VERSION}"
+fi
 # Remove 'v' prefix from version if it exists
 VERSION=${VERSION#v}
 ARCH="${2:-arm64}"
